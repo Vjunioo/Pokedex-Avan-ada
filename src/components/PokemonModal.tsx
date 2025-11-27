@@ -182,12 +182,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   
-  // HEADER
   header: {
     paddingHorizontal: 20,
     paddingTop: 10,
     paddingBottom: 0,
-    zIndex: 1, // GARANTE QUE A IMAGEM FIQUE POR CIMA DO FUNDO BRANCO
+    zIndex: 1,
   },
   
   dragHandleContainer: {
@@ -250,7 +249,6 @@ const styles = StyleSheet.create({
     height: 240,
   },
 
-  // BODY
   body: {
     flex: 1,
     paddingHorizontal: 30,

@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 
 const CACHE_PREFIX = '@pokedex_v1_';
-const TTL_MINUTES = 60; // Aumentei um pouco
+const TTL_MINUTES = 60;
 
 export const CacheManager = {
   set: async (key: string, data: any) => {
@@ -13,13 +13,11 @@ export const CacheManager = {
       };
       await AsyncStorage.setItem(CACHE_PREFIX + key, JSON.stringify(payload));
     } catch (error: any) {
-      // CORREÇÃO: Se o cache encher, limpamos para não travar o app
       if (error.name === 'QuotaExceededError' || error.message?.includes('quota') || error.message?.includes('exceeded')) {
-        console.warn('[Cache] Memória cheia! Limpando cache antigo...');
-        await AsyncStorage.clear();
-      } else {
-        console.error('Erro ao salvar cache:', error);
+        return; 
       }
+      
+      console.error('Erro ao salvar cache:', error);
     }
   },
 
@@ -33,14 +31,13 @@ export const CacheManager = {
       const state = await NetInfo.fetch();
       const isOffline = !state.isConnected;
 
-      // Se estiver offline, retorna o dado mesmo vencido
       if (ignoreTTL || isOffline) return data as T;
 
       const now = Date.now();
       const ageMinutes = (now - timestamp) / 1000 / 60;
 
       if (ageMinutes > TTL_MINUTES) {
-        return null; // Expirou
+        return null; 
       }
 
       return data as T;

@@ -14,7 +14,6 @@ import {
 } from "react-native";
 import { MaterialIcons } from '@expo/vector-icons';
 
-// --- ASSETS ---
 const WALLPAPER_IMG = require('../../assets/background/wallpaper.jpg');
 const LOGO_IMG = require('../../assets/logos/titulo.png');
 const POKEBALL_ICON = require('../../assets/logos/pokeball.png');
@@ -29,7 +28,6 @@ export function WelcomeScreen({ onStart }: Props) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  // CORREÇÃO: Na Web, useNativeDriver deve ser FALSE. No celular, TRUE.
   const useNativeDriver = Platform.OS !== 'web';
 
   useEffect(() => {
@@ -52,7 +50,7 @@ export function WelcomeScreen({ onStart }: Props) {
   const handleStartPress = () => {
     Animated.sequence([
       Animated.timing(scaleAnim, { 
-        toValue: 0.95, // Ajustei para 0.95 para ser mais sutil
+        toValue: 0.95,
         duration: 100, 
         useNativeDriver 
       }),
@@ -92,7 +90,7 @@ export function WelcomeScreen({ onStart }: Props) {
             <TouchableOpacity
               onPress={handleStartPress}
               activeOpacity={0.9}
-              style={{ width: '100%', alignItems: 'center' }} // Garante centralização
+              style={{ width: '100%', alignItems: 'center' }}
             >
               <Animated.View
                 style={[
@@ -116,7 +114,7 @@ export function WelcomeScreen({ onStart }: Props) {
                 <Text 
                   style={styles.buttonText} 
                   numberOfLines={1} 
-                  adjustsFontSizeToFit // Texto diminui se a tela for minúscula
+                  adjustsFontSizeToFit
                 >
                   INICIAR
                 </Text>
@@ -150,7 +148,6 @@ const styles = StyleSheet.create({
     paddingVertical: Platform.OS === 'android' ? 40 : 20,
   },
   
-  // --- HEADER ---
   headerArea: {
     marginTop: height * 0.1, 
     alignItems: 'center',
@@ -158,10 +155,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   logo: {
-    width: '90%',        // Porcentagem é melhor que width fixo
-    maxWidth: 500,       // Trava para não ficar gigante no PC
+    width: '90%',
+    maxWidth: 500,
     height: 250,         
-    maxHeight: height * 0.3, // Não ocupa mais que 30% da altura
+    maxHeight: height * 0.3,
   },
   subtitle: {
     color: '#FFF',
@@ -176,7 +173,6 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 2 },
   },
 
-  // --- FOOTER ---
   footerArea: {
     marginBottom: height * 0.08, 
     alignItems: 'center',
@@ -187,23 +183,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: '#FF5350', 
     
-    // --- RESPONSIVIDADE DO BOTÃO ---
-    width: '100%',       // Tenta ocupar tudo...
-    maxWidth: 400,       // ...mas para em 400px (Fica ótimo no PC e Celular)
+    width: '100%',
+    maxWidth: 400,
     height: 75,
     
     borderRadius: 37.5,
     alignItems: 'center',
     paddingHorizontal: 10,
     
-    // Sombras
     shadowColor: '#FF5350',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.7,
     shadowRadius: 20,
     elevation: 15,
     
-    // Borda
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.2)',
   },

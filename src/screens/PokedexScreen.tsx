@@ -12,7 +12,6 @@ import { PokemonModal } from '../components/PokemonModal';
 
 const MAX_CONTENT_WIDTH = 600; 
 
-// Lista de tipos disponível para filtro
 const POKEMON_TYPES = [
   'fire', 'water', 'grass', 'electric', 'bug', 'ghost', 'psychic', 
   'dragon', 'fairy', 'ice', 'fighting', 'normal', 'poison', 
@@ -24,7 +23,6 @@ interface Props {
 }
 
 export function PokedexScreen({ onBack }: Props) {
-  // 1. Hook Principal (Lógica de dados)
   const { 
     pokemons, 
     loading, 
@@ -36,33 +34,27 @@ export function PokedexScreen({ onBack }: Props) {
     resetList 
   } = usePokedex();
 
-  // 2. Estados Locais da Tela
   const [searchText, setSearchText] = useState('');
   const [activeType, setActiveType] = useState<string | null>(null);
   const [selectedPokemon, setSelectedPokemon] = useState<PokemonDetail | null>(null);
 
-  // --- AÇÃO: BUSCAR POR NOME ---
   const handleSearch = (text: string) => {
     setSearchText(text);
-    setActiveType(null); // Limpa o filtro de tipo se buscar por texto
+    setActiveType(null);
     searchPokemon(text);
   };
 
-  // --- AÇÃO: FILTRAR POR TIPO ---
   const handleTypePress = (type: string) => {
-    // Se clicar no mesmo tipo que já está ativo, remove o filtro
     if (activeType === type) {
       setActiveType(null);
       resetList();
     } else {
-      // Se for um novo tipo, aplica o filtro
       setActiveType(type);
-      setSearchText(''); // Limpa a busca de texto
+      setSearchText('');
       filterByType(type);
     }
   };
 
-  // --- RENDERIZAÇÃO: CARD DO POKEMON ---
   const renderCard = ({ item }: { item: PokemonDetail }) => {
     const mainType = item.types[0]?.type.name || 'normal';
     const backgroundColor = TYPE_COLORS[mainType] || DEFAULT_COLOR;
@@ -71,7 +63,7 @@ export function PokedexScreen({ onBack }: Props) {
       <TouchableOpacity 
         activeOpacity={0.8} 
         style={[styles.cardContainer, { backgroundColor }]}
-        onPress={() => setSelectedPokemon(item)} // Abre o Modal
+        onPress={() => setSelectedPokemon(item)}
       >
         <View style={styles.cardDecoration} />
         
@@ -100,7 +92,6 @@ export function PokedexScreen({ onBack }: Props) {
     );
   };
 
-  // --- RENDERIZAÇÃO: ITEM DE FILTRO (BOLINHA) ---
   const renderFilterItem = ({ item }: { item: string }) => {
     const isActive = activeType === item;
     const pillColor = TYPE_COLORS[item];
@@ -170,7 +161,7 @@ export function PokedexScreen({ onBack }: Props) {
             renderItem={renderFilterItem}
             keyExtractor={(item) => item}
             contentContainerStyle={{ paddingHorizontal: 20 }}
-            keyboardShouldPersistTaps="handled" // Garante que o toque funcione mesmo com teclado aberto
+            keyboardShouldPersistTaps="handled"
           />
         </View>
 

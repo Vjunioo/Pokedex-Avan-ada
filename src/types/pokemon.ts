@@ -32,14 +32,13 @@ export interface PokemonBasic {
   url: string;
 }
 
-// Interface completa usada nos detalhes e modal
 export interface PokemonDetail {
   id: number;
   name: string;
   types: PokemonType[];
   sprites: PokemonSprites;
-  weight: number;       // Adicionado
-  height: number;       // Adicionado
+  weight: number;
+  height: number;
   stats: PokemonStat[]; 
   abilities: PokemonAbility[]; 
 }
