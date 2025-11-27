@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PokeApi } from '../api/pokeApi';
-import { PokemonBasic } from '../types/pokemon';
 import { CacheManager } from '../utils/cache';
+import { PokemonBasic, PokemonDetail } from '../types/pokemon';
 
 export function usePokedex() {
-  const [list, setList] = useState<PokemonBasic[]>([]);
+  const [pokemons, setPokemons] = useState<PokemonDetail[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(false);
@@ -13,32 +13,69 @@ export function usePokedex() {
   const [hasMore, setHasMore] = useState(true);
   const [isFiltering, setIsFiltering] = useState(false);
 
+  // NOVO: Lista Mestra com todos os nomes para o Autocomplete
+  const allPokemonRef = useRef<PokemonBasic[]>([]);
+
+  const isFetching = useRef(false); 
   const searchTimeout = useRef<NodeJS.Timeout | null>(null);
   const abortController = useRef<AbortController | null>(null);
 
+  // 1. Carrega a Lista Mestra (Nomes) ao iniciar o App (Background)
+  useEffect(() => {
+    const loadMasterList = async () => {
+      try {
+        const all = await PokeApi.getAllPokemonNames();
+        allPokemonRef.current = all;
+      } catch (e) {
+        console.warn('Falha ao carregar lista de autocomplete');
+      }
+    };
+    loadMasterList();
+    loadMore(); // Carrega a página 1 normal
+  }, []);
+
+  // --- CARREGAR MAIS (INFINITE SCROLL) ---
   const loadMore = useCallback(async () => {
-    if (loading || !hasMore || isFiltering) return;
+    if (loading || !hasMore || isFiltering || isFetching.current) return;
 
     setLoading(true);
+    isFetching.current = true; 
     setError(null);
+    
     const offline = await CacheManager.isOffline();
     setIsOffline(offline);
 
     try {
       const data = await PokeApi.getPokemonList(20, offset);
+      
       if (data.results.length === 0) {
         setHasMore(false);
-      } else {
-        setList(prev => [...prev, ...data.results]);
-        setOffset(prev => prev + 20);
+        setLoading(false);
+        return;
       }
-    } catch (err) {
-      setError('Erro ao carregar. Verifique sua conexão.');
+
+      const urls = data.results.map((p: PokemonBasic) => p.url);
+      const details = await PokeApi.getManyDetails(urls);
+
+      setPokemons(prev => {
+        const existingIds = new Set(prev.map(p => p.id));
+        const uniqueNewPokemons = details.filter(p => !existingIds.has(p.id));
+        return [...prev, ...uniqueNewPokemons];
+      });
+
+      setOffset(prev => prev + 20);
+
+    } catch (err: any) {
+      const currentOfflineStatus = await CacheManager.isOffline();
+      setIsOffline(currentOfflineStatus);
+      if (!currentOfflineStatus) setError('Erro ao carregar.');
     } finally {
       setLoading(false);
+      isFetching.current = false; 
     }
   }, [offset, loading, hasMore, isFiltering]);
 
+  // --- BUSCA INTELIGENTE (AUTOCOMPLETE) ---
   const searchPokemon = (text: string) => {
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
     if (abortController.current) abortController.current.abort();
@@ -52,20 +89,40 @@ export function usePokedex() {
     
     searchTimeout.current = setTimeout(async () => {
       setLoading(true);
-      setList([]);
-      abortController.current = new AbortController();
-
+      setError(null);
+      
       try {
-        const detail = await PokeApi.getPokemonDetail(text.toLowerCase());
-        setList([{ name: detail.name, url: `https://pokeapi.co/api/v2/pokemon/${detail.id}` }]);
+        const searchTerm = text.toLowerCase();
+        
+        // 1. Filtra localmente na Lista Mestra (Instantâneo)
+        // Procura pokemons que "contêm" o texto (Ex: 'iv' -> Ivysaur, Snivy, Vivillon)
+        const matches = allPokemonRef.current.filter(p => p.name.includes(searchTerm));
+
+        if (matches.length === 0) {
+          setError(`Nenhum Pokémon encontrado com "${text}".`);
+          setPokemons([]);
+          setLoading(false);
+          return;
+        }
+
+        // 2. Pega apenas os primeiros 20 resultados para não travar
+        const topMatches = matches.slice(0, 20);
+        const urls = topMatches.map(p => p.url);
+
+        // 3. Busca os detalhes visuais desses 20
+        const details = await PokeApi.getManyDetails(urls);
+        setPokemons(details);
+
       } catch (err: any) {
-        if (err.name !== 'AbortError') setError('Pokémon não encontrado.');
+        setError('Erro na busca.');
+        setPokemons([]); 
       } finally {
         setLoading(false);
       }
-    }, 600);
+    }, 200); // 600ms de debounce para esperar você terminar de digitar
   };
 
+  // --- FILTRO POR TIPO ---
   const filterByType = async (type: string) => {
     if (!type) {
       resetList();
@@ -73,15 +130,19 @@ export function usePokedex() {
     }
     
     setLoading(true);
-    setList([]);
+    setPokemons([]); 
     setIsFiltering(true);
     setError(null);
 
     try {
       const data = await PokeApi.getPokemonByType(type.toLowerCase());
-      setList(data.results);
+      
+      const urls = data.results.slice(0, 20).map((p: PokemonBasic) => p.url);
+      const details = await PokeApi.getManyDetails(urls);
+      
+      setPokemons(details);
     } catch (err) {
-      setError(`Erro ao carregar pokémons do tipo ${type}`);
+      setError(`Erro ao carregar tipo ${type}`);
     } finally {
       setLoading(false);
     }
@@ -89,18 +150,18 @@ export function usePokedex() {
 
   const resetList = () => {
     setIsFiltering(false);
-    setList([]);
+    setPokemons([]);
     setOffset(0);
     setHasMore(true);
-    setTimeout(() => loadMore(), 100);
+    
+    setTimeout(() => {
+      isFetching.current = false;
+      loadMore();
+    }, 100);
   };
 
-  useEffect(() => {
-    loadMore();
-  }, []);
-
   return {
-    list,
+    pokemons,
     loading,
     error,
     isOffline,
