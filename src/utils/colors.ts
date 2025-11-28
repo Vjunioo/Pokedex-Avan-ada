@@ -19,5 +19,4 @@ export const TYPE_COLORS: Record<string, string> = {
   fairy: '#D685AD',
 };
 
-// Cor de fundo padrão se o tipo não for encontrado
 export const DEFAULT_COLOR = '#A8A878';

@@ -11,9 +11,11 @@ export interface PokemonSprites {
     'official-artwork': {
       front_default: string;
     };
+
+
   };
 }
-
+  
 export interface PokemonStat {
   base_stat: number;
   stat: {

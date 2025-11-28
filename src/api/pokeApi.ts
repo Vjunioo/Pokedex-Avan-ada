@@ -1,36 +1,11 @@
-import { httpClient } from '../utils/http';
-import { CacheManager } from '../utils/cache';
 import { PokemonBasic, PokemonDetail } from '../types/pokemon';
+import { CacheManager } from '../utils/cache';
+import { httpClient } from '../utils/http';
 
 const BASE_URL = 'https://pokeapi.co/api/v2';
 
 export const PokeApi = {
-  // ... (métodos existentes: getPokemonList, getPokemonDetail, getPokemonByType)
-
-  // NOVO MÉTODO PARA BUSCAR VARIAÇÕES DE FORMA
-  getPokemonForms: async (name: string): Promise<PokemonBasic[]> => {
-    const id = name.toLowerCase();
-    const url = `${BASE_URL}/pokemon-species/${id}`;
-
-    // Tenta obter do cache usando a URL da espécie
-    const cached = await CacheManager.get<{ varieties: { pokemon: PokemonBasic }[] }>(url);
-
-    let speciesData;
-    if (cached) {
-      speciesData = cached;
-    } else {
-      // Se não estiver no cache, faz a requisição
-      speciesData = await httpClient<{ varieties: { pokemon: PokemonBasic }[] }>(url);
-      await CacheManager.set(url, speciesData);
-    }
-    
-    
-    const formsList = speciesData.varieties.map(v => v.pokemon);
-    
-   
-    return formsList;
-  },
-
+  // 1. Lista Paginada (Home)
   getPokemonList: async (limit = 20, offset = 0): Promise<{ results: PokemonBasic[] }> => {
     const url = `${BASE_URL}/pokemon?limit=${limit}&offset=${offset}`;
     
@@ -42,6 +17,7 @@ export const PokeApi = {
     return data;
   },
 
+  // 2. Detalhes
   getPokemonDetail: async (nameOrId: string | number): Promise<PokemonDetail> => {
     const id = String(nameOrId).toLowerCase();
     const url = `${BASE_URL}/pokemon/${id}`;
@@ -54,20 +30,20 @@ export const PokeApi = {
     return data;
   },
 
+  // 3. Filtro por Tipo
   getPokemonByType: async (type: string): Promise<PokemonBasic[]> => {
     const url = `${BASE_URL}/type/${type}`;
-    
     const cached = await CacheManager.get<{ results: PokemonBasic[] }>(url);
     if (cached && Array.isArray(cached.results)) return cached.results;
 
     const data = await httpClient<{ pokemon: { pokemon: PokemonBasic }[] }>(url);
-    
     const normalizedList = data.pokemon.map(p => p.pokemon);
 
     await CacheManager.set(url, { results: normalizedList });
     return normalizedList;
   },
 
+  // 4. Detalhes em Lote
   getManyDetails: async (pokemonList: PokemonBasic[]): Promise<PokemonDetail[]> => {
     const results: PokemonDetail[] = [];
     const BATCH_SIZE = 5;
@@ -82,5 +58,21 @@ export const PokeApi = {
       results.push(...chunkResponses);
     }
     return results;
+  },
+
+  // 5. --- ESSA É A FUNÇÃO QUE ESTAVA FALTANDO ---
+  getAllPokemonNames: async (): Promise<PokemonBasic[]> => {
+    // Baixa lista de 10.000 (basicamente todos que existem) para busca local
+    const url = `${BASE_URL}/pokemon?limit=10000`; 
+    
+    const cached = await CacheManager.get<{ results: PokemonBasic[] }>(url);
+    if (cached) return cached.results;
+
+    const data = await httpClient<{ results: PokemonBasic[] }>(url);
+    
+    // Cache longo pois novos pokemons não nascem todo dia
+    await CacheManager.set(url, data); 
+    
+    return data.results;
   }
 };

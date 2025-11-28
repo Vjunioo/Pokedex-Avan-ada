@@ -1,9 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { PokeApi } from '../api/pokeApi';
 import { PokemonBasic, PokemonDetail } from '../types/pokemon';
 import { CacheManager } from '../utils/cache';
-
-const BATCH_SIZE = 20;
 
 export function usePokedex() {
   const [pokemons, setPokemons] = useState<PokemonDetail[]>([]);
@@ -14,16 +12,16 @@ export function usePokedex() {
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
 
-  const [isFiltering, setIsFiltering] = useState(false);
+  const [activeFilterType, setActiveFilterType] = useState<string | null>(null);
   const [filteredListQueue, setFilteredListQueue] = useState<PokemonBasic[]>([]);
-
-  const searchTimeout = useRef<NodeJS.Timeout | null>(null);
+  
+  const filterRef = useRef<string | null>(null);
+  const searchTimeout = useRef<any>(null);
 
   const addPokemonsUnique = useCallback((newPokemons: PokemonDetail[]) => {
     setPokemons(prev => {
       const existingIds = new Set(prev.map(p => p.id));
       const uniqueNew = newPokemons.filter(p => !existingIds.has(p.id));
-      
       if (uniqueNew.length === 0) return prev;
       return [...prev, ...uniqueNew];
     });
@@ -32,43 +30,62 @@ export function usePokedex() {
   const fetchDetailsForList = async (basicList: PokemonBasic[]) => {
     try {
       const details = await PokeApi.getManyDetails(basicList);
-      addPokemonsUnique(details);
+      return details;
     } catch (err) {
       console.error(err);
-      setError('Erro ao carregar detalhes.'); 
+      setError('Erro ao carregar detalhes.');
+      return [];
     }
   };
 
   const loadMore = useCallback(async () => {
     if (loading) return;
 
+    if (filterRef.current !== null) {
+        if (filteredListQueue.length === 0) {
+            setHasMore(false);
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const nextBatch = filteredListQueue.slice(0, 20);
+            const remaining = filteredListQueue.slice(20);
+            
+            if (filterRef.current === null) return;
+
+            setFilteredListQueue(remaining);
+            const details = await fetchDetailsForList(nextBatch);
+            
+            if (filterRef.current !== null) {
+                addPokemonsUnique(details);
+                if (remaining.length === 0) setHasMore(false);
+            }
+        } catch(e) {
+            setError('Erro ao carregar filtro.');
+        } finally {
+            setLoading(false);
+        }
+        return; 
+    }
+
+    if (!hasMore) return;
+
     setLoading(true);
-    const offline = await CacheManager.isOffline(); 
+    const offline = await CacheManager.isOffline();
     setIsOffline(offline);
 
     try {
-      if (isFiltering) {
-        if (filteredListQueue.length === 0) {
-          setHasMore(false);
-        } else {
-          const nextBatch = filteredListQueue.slice(0, BATCH_SIZE);
-          const remaining = filteredListQueue.slice(BATCH_SIZE);
-          setFilteredListQueue(remaining);
-          await fetchDetailsForList(nextBatch);
-          if (remaining.length === 0) setHasMore(false);
-        }
+      const data = await PokeApi.getPokemonList(20, offset);
+      if (filterRef.current !== null) return;
+
+      if (data.results.length === 0) {
+        setHasMore(false);
       } else {
-        if (!hasMore) {
-           setLoading(false); 
-           return;
-        }
-        
-        const data = await PokeApi.getPokemonList(BATCH_SIZE, offset);
-        if (data.results.length === 0) {
-          setHasMore(false);
-        } else {
-          await fetchDetailsForList(data.results);
-          setOffset(prev => prev + BATCH_SIZE);
+        const details = await fetchDetailsForList(data.results);
+        if (filterRef.current === null) {
+            addPokemonsUnique(details);
+            setOffset(prev => prev + 20);
         }
       }
     } catch (err) {
@@ -76,146 +93,90 @@ export function usePokedex() {
     } finally {
       setLoading(false);
     }
-  }, [offset, hasMore, isFiltering, filteredListQueue, loading, addPokemonsUnique]);
-
-  const fetchSuggestions = useCallback(async (query: string): Promise<string[]> => {
-    try {
-      let allNames: string[] | null = await CacheManager.get('all_pokemon_names');
-
-      if (!allNames) {
-        const data = await PokeApi.getPokemonList(10000, 0); 
-        allNames = data.results.map(p => p.name);
-        
-        await CacheManager.set('all_pokemon_names', allNames);
-      }
-
-      const lowerCaseQuery = query.toLowerCase().trim();
-      
-      if (lowerCaseQuery.length === 0) {
-          return allNames || [];
-      }
-      
-      const suggestions = (allNames || [])
-        .filter(name => name.includes(lowerCaseQuery))
-        .slice(0, 10); 
-
-      return suggestions;
-
-    } catch (err) {
-      console.error("Erro ao buscar sugestões:", err);
-      return await CacheManager.get('all_pokemon_names') || []; 
-    }
-  }, []);
-
+  }, [loading, filteredListQueue, hasMore, offset, addPokemonsUnique]);
 
   const searchPokemon = (text: string) => {
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
     
-    const query = text.trim().toLowerCase();
-    
-    if (!query) {
+    if (!text.trim()) {
       resetList();
       return;
     }
 
-    setIsFiltering(true); 
-    setHasMore(true);
-
+    updateFilterMode('SEARCH'); 
+    
     searchTimeout.current = setTimeout(async () => {
       setLoading(true);
-      setPokemons([]);
+      setPokemons([]); 
       setFilteredListQueue([]);
-      setError(null);
+      setHasMore(true);
       
       try {
-        const allNames = await fetchSuggestions(''); 
-        const isExactMatch = allNames.some(name => name === query);
+        const allPokemons = await PokeApi.getAllPokemonNames();
+        const term = text.toLowerCase();
+        const matches = allPokemons.filter(p => p.name.includes(term));
 
-        if (isExactMatch) {
-          
-          let formsList: PokemonBasic[] = [];
-          try {
-              
-              formsList = await PokeApi.getPokemonForms(query);
-              
-              formsList.sort((a, b) => {
-                  if (a.name === query) return -1;
-                  if (b.name === query) return 1;
-                  return 0;
-              });
-
-          } catch (formError) {
-              console.warn(`Falha ao buscar formas para ${query}. Buscando apenas o base.`);
-              formsList = [{ name: query, url: `https://pokeapi.co/api/v2/pokemon/${query}/` }];
-          }
-
-          if (formsList.length === 0) {
-              setError(`Nenhuma forma encontrada para ${query}.`);
-              setHasMore(false);
-              return;
-          }
-
-          const firstBatch = formsList.slice(0, BATCH_SIZE);
-          const remaining = formsList.slice(BATCH_SIZE);
-
-          setFilteredListQueue(remaining);
-          await fetchDetailsForList(firstBatch);
-          
-          if (remaining.length === 0) setHasMore(false);
-          
-        } else {
-         
-          
-          const matchingNames = (allNames || [])
-            .filter(name => name.includes(query));
-
-          if (matchingNames.length === 0) {
-            setError('Nenhum Pokémon encontrado com este nome.');
-            setHasMore(false);
+        if (matches.length === 0) {
+            setError('Nenhum Pokémon encontrado.');
+            setLoading(false);
             return;
-          }
+        }
 
-          const basicList: PokemonBasic[] = matchingNames.map(name => ({ 
-              name, 
-              url: `https://pokeapi.co/api/v2/pokemon/${name}/` 
-          }));
+        const firstBatch = matches.slice(0, 20);
+        const remaining = matches.slice(20);
 
-          const firstBatch = basicList.slice(0, BATCH_SIZE);
-          const remaining = basicList.slice(BATCH_SIZE);
-          
-          setFilteredListQueue(remaining);
-          await fetchDetailsForList(firstBatch);
-
-          if (remaining.length === 0) setHasMore(false);
+        setFilteredListQueue(remaining);
+        const details = await fetchDetailsForList(firstBatch);
+        
+        if (filterRef.current === 'SEARCH') {
+            setPokemons(details);
+            if (remaining.length === 0) setHasMore(false);
         }
       } catch (err) {
-        
-        setError('Ocorreu um erro na busca.');
-        setPokemons([]);
-        setHasMore(false);
+        setError('Erro na busca.');
       } finally {
         setLoading(false);
       }
     }, 600);
   };
 
+  const fetchSuggestions = useCallback(async (text: string) => {
+    if (!text || text.length < 2) return [];
+    
+    try {
+      const allPokemons = await PokeApi.getAllPokemonNames();
+      const term = text.toLowerCase();
+      
+      return allPokemons
+        .filter(p => p.name.includes(term))
+        .map(p => p.name)
+        .slice(0, 5);
+    } catch (e) {
+      return [];
+    }
+  }, []);
+
   const filterByType = async (type: string) => {
+    updateFilterMode(type);
+
     setLoading(true);
-    setIsFiltering(true);
-    setHasMore(true);
-    setPokemons([]);
-    setFilteredListQueue([]);
+    setPokemons([]); 
+    setFilteredListQueue([]); 
     setError(null);
+    setHasMore(true);
 
     try {
       const allNamesWithType = await PokeApi.getPokemonByType(type.toLowerCase());
       
-      const firstBatch = allNamesWithType.slice(0, BATCH_SIZE);
-      const remaining = allNamesWithType.slice(BATCH_SIZE);
+      const firstBatch = allNamesWithType.slice(0, 20);
+      const remaining = allNamesWithType.slice(20);
 
       setFilteredListQueue(remaining);
-
-      await fetchDetailsForList(firstBatch);
+      const details = await fetchDetailsForList(firstBatch);
+      
+      if (filterRef.current === type) {
+          setPokemons(details);
+      }
 
     } catch (err) {
       setError(`Erro ao carregar tipo ${type}`);
@@ -224,8 +185,13 @@ export function usePokedex() {
     }
   };
 
+  const updateFilterMode = (mode: string | null) => {
+      setActiveFilterType(mode);
+      filterRef.current = mode;
+  };
+
   const resetList = () => {
-    setIsFiltering(false);
+    updateFilterMode(null);
     setFilteredListQueue([]);
     setPokemons([]);
     setOffset(0);
@@ -233,15 +199,22 @@ export function usePokedex() {
     setLoading(false);
     
     setTimeout(() => {
-        PokeApi.getPokemonList(BATCH_SIZE, 0).then(data => {
-             fetchDetailsForList(data.results);
-             setOffset(BATCH_SIZE);
-        });
+        if (filterRef.current === null) {
+            PokeApi.getPokemonList(20, 0).then(async (data) => {
+                 if (filterRef.current === null) {
+                    const details = await fetchDetailsForList(data.results);
+                    addPokemonsUnique(details);
+                    setOffset(20);
+                 }
+            });
+        }
     }, 50);
   };
 
   useEffect(() => {
-    loadMore();
+    if (filterRef.current === null) {
+        loadMore();
+    }
   }, []);
 
   return {
@@ -253,6 +226,7 @@ export function usePokedex() {
     searchPokemon,
     filterByType,
     resetList,
-    fetchSuggestions,
+    activeFilterType,
+    fetchSuggestions
   };
 }

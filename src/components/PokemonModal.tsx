@@ -7,6 +7,8 @@ import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
 import { PokemonDetail } from '../types/pokemon';
 import { TYPE_COLORS } from '../utils/colors';
+   
+
 
 const { height } = Dimensions.get('window');
 
