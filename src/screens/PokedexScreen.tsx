@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   StyleSheet, View, Text, FlatList, ActivityIndicator, 
-  SafeAreaView, StatusBar, TextInput, TouchableOpacity, Platform 
+  SafeAreaView, StatusBar, TextInput, TouchableOpacity, Platform,
+  Keyboard
 } from 'react-native';
 import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons'; 
@@ -31,18 +32,54 @@ export function PokedexScreen({ onBack }: Props) {
     loadMore, 
     searchPokemon, 
     filterByType, 
-    resetList 
+    resetList,
+    fetchSuggestions, 
   } = usePokedex();
 
   const [searchText, setSearchText] = useState('');
   const [activeType, setActiveType] = useState<string | null>(null);
   const [selectedPokemon, setSelectedPokemon] = useState<PokemonDetail | null>(null);
+  
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  useEffect(() => {
+    if (searchText.length > 2) {
+      const timer = setTimeout(async () => {
+        try {
+          const names = await fetchSuggestions(searchText);
+          setSuggestions(names);
+          setShowSuggestions(true);
+        } catch (e) {
+          setSuggestions([]);
+        }
+      }, 300);
+      return () => clearTimeout(timer);
+    } else {
+      setSuggestions([]);
+      setShowSuggestions(false);
+    }
+  }, [searchText, fetchSuggestions]);
+
+  const handleSearchAction = (text: string) => {
+    setSearchText(text);
+    setActiveType(null);
+    setShowSuggestions(false);
+    Keyboard.dismiss();
+    searchPokemon(text);
+  }
 
   const handleSearch = (text: string) => {
     setSearchText(text);
-    setActiveType(null);
-    searchPokemon(text);
+    if (text.length === 0) {
+        handleSearchAction('');
+    }
   };
+  
+  const handleSuggestionPress = (name: string) => {
+    handleSearchAction(name);
+  };
+
 
   const handleTypePress = (type: string) => {
     if (activeType === type) {
@@ -51,6 +88,7 @@ export function PokedexScreen({ onBack }: Props) {
     } else {
       setActiveType(type);
       setSearchText('');
+      handleSearchAction('');
       filterByType(type);
     }
   };
@@ -118,12 +156,30 @@ export function PokedexScreen({ onBack }: Props) {
     );
   };
 
+  const renderSuggestions = () => {
+    if (!showSuggestions || suggestions.length === 0) return null;
+
+    return (
+      <View style={styles.suggestionsContainer}>
+        {suggestions.slice(0, 5).map((name) => (
+          <TouchableOpacity 
+            key={name} 
+            style={styles.suggestionItem}
+            onPress={() => handleSuggestionPress(name)}
+          >
+            <MaterialIcons name="chevron-right" size={20} color="#666" />
+            <Text style={styles.suggestionText}>{name.charAt(0).toUpperCase() + name.slice(1)}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor="#f2f4f8" />
       
       <View style={styles.responsiveContainer}>
-        {/* HEADER */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onBack} style={styles.backButton}>
              <MaterialIcons name="arrow-back" size={28} color="#333" />
@@ -135,24 +191,29 @@ export function PokedexScreen({ onBack }: Props) {
           {isOffline ? <MaterialIcons name="wifi-off" size={24} color="#d9534f" /> : null}
         </View>
 
-        {/* BARRA DE BUSCA */}
-        <View style={styles.searchContainer}>
-          <MaterialIcons name="search" size={24} color="#999" />
-          <TextInput 
-            style={styles.searchInput}
-            placeholder="Buscar Pokémon..."
-            value={searchText}
-            onChangeText={handleSearch}
-            placeholderTextColor="#999"
-          />
-          {searchText.length > 0 && (
-            <TouchableOpacity onPress={() => handleSearch('')}>
-              <MaterialIcons name="close" size={20} color="#999" />
-            </TouchableOpacity>
-          )}
+        <View style={styles.searchSection}>
+            <View style={styles.searchContainer}>
+            <MaterialIcons name="search" size={24} color="#999" />
+            <TextInput 
+                style={styles.searchInput}
+                placeholder="Buscar Pokémon..."
+                value={searchText}
+                onChangeText={handleSearch}
+                onSubmitEditing={() => handleSearchAction(searchText)}
+                onFocus={() => searchText.length > 2 && suggestions.length > 0 && setShowSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                placeholderTextColor="#999"
+            />
+            {searchText.length > 0 && (
+                <TouchableOpacity onPress={() => handleSearchAction('')}>
+                <MaterialIcons name="close" size={20} color="#999" />
+                </TouchableOpacity>
+            )}
+            </View>
+            {renderSuggestions()}
         </View>
 
-        {/* LISTA HORIZONTAL DE FILTROS */}
+
         <View style={styles.filtersWrapper}>
           <FlatList
             data={POKEMON_TYPES}
@@ -165,7 +226,6 @@ export function PokedexScreen({ onBack }: Props) {
           />
         </View>
 
-        {/* LISTA PRINCIPAL DE CARDS */}
         {error && !loading && pokemons.length === 0 ? (
           <View style={styles.centerState}>
             <MaterialIcons name="error-outline" size={60} color="#ff6b6b" />
@@ -220,12 +280,19 @@ const styles = StyleSheet.create({
   appTitle: { fontSize: 28, fontWeight: '800', color: '#333', letterSpacing: 0.5 },
   offlineText: { fontSize: 12, color: '#d9534f', fontWeight: '600' },
   
- 
-  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', marginHorizontal: 20, borderRadius: 25, paddingHorizontal: 15, height: 50, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2, marginBottom: 15 },
+  searchSection: { marginHorizontal: 20, zIndex: 10 }, 
+
+  
+  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 25, paddingHorizontal: 15, height: 50, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2, marginBottom: 5 },
   searchInput: { flex: 1, fontSize: 16, color: '#333', marginLeft: 10 },
   
   
-  filtersWrapper: { height: 40, marginBottom: 15 },
+  suggestionsContainer: { position: 'absolute', top: 55, left: 0, right: 0, backgroundColor: '#fff', borderRadius: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 5, elevation: 3, paddingVertical: 5 },
+  suggestionItem: { paddingHorizontal: 15, paddingVertical: 10, flexDirection: 'row', alignItems: 'center' },
+  suggestionText: { fontSize: 16, color: '#333', marginLeft: 5, textTransform: 'capitalize' },
+
+ 
+  filtersWrapper: { height: 40, marginBottom: 15, zIndex: 5 },
   filterItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, marginRight: 8, borderWidth: 1, height: 36 },
   filterDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
   filterText: { fontSize: 14 },

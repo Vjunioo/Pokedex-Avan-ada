@@ -5,6 +5,32 @@ import { PokemonBasic, PokemonDetail } from '../types/pokemon';
 const BASE_URL = 'https://pokeapi.co/api/v2';
 
 export const PokeApi = {
+  // ... (métodos existentes: getPokemonList, getPokemonDetail, getPokemonByType)
+
+  // NOVO MÉTODO PARA BUSCAR VARIAÇÕES DE FORMA
+  getPokemonForms: async (name: string): Promise<PokemonBasic[]> => {
+    const id = name.toLowerCase();
+    const url = `${BASE_URL}/pokemon-species/${id}`;
+
+    // Tenta obter do cache usando a URL da espécie
+    const cached = await CacheManager.get<{ varieties: { pokemon: PokemonBasic }[] }>(url);
+
+    let speciesData;
+    if (cached) {
+      speciesData = cached;
+    } else {
+      // Se não estiver no cache, faz a requisição
+      speciesData = await httpClient<{ varieties: { pokemon: PokemonBasic }[] }>(url);
+      await CacheManager.set(url, speciesData);
+    }
+    
+    
+    const formsList = speciesData.varieties.map(v => v.pokemon);
+    
+   
+    return formsList;
+  },
+
   getPokemonList: async (limit = 20, offset = 0): Promise<{ results: PokemonBasic[] }> => {
     const url = `${BASE_URL}/pokemon?limit=${limit}&offset=${offset}`;
     
