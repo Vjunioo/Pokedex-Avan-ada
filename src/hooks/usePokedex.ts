@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { PokeApi } from '../api/pokeApi';
+import NetInfo from '@react-native-community/netinfo';
+import { PokeApi, setAppOfflineStatus } from '../api/pokeApi';
 import { PokemonBasic, PokemonDetail } from '../types/pokemon';
 import { CacheManager } from '../utils/cache';
+
+const BATCH_SIZE = 20;
 
 export function usePokedex() {
   const [pokemons, setPokemons] = useState<PokemonDetail[]>([]);
@@ -19,7 +22,7 @@ export function usePokedex() {
 
   const addPokemonsUnique = useCallback((newPokemons: PokemonDetail[]) => {
     setPokemons(prev => {
-      const existingIds = new Set(prev.map(p => p.id));
+      const existingIds = prev.length > 0 ? new Set(prev.map(p => p.id)) : new Set();
       const uniqueNew = newPokemons.filter(p => !existingIds.has(p.id));
       
       if (uniqueNew.length === 0) return prev;
@@ -31,50 +34,59 @@ export function usePokedex() {
     try {
       const details = await PokeApi.getManyDetails(basicList);
       addPokemonsUnique(details);
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      if (err.message === 'OFFLINE_MODE') {
+        return;
+      }
       setError('Erro ao carregar detalhes.');
+      throw err;
     }
   };
 
   const loadMore = useCallback(async () => {
-    if (loading) return;
+    if (loading || (!isFiltering && !hasMore)) return;
 
     setLoading(true);
-    const offline = await CacheManager.isOffline();
-    setIsOffline(offline);
+    if (!error) setError(null);
 
     try {
       if (isFiltering) {
-        if (filteredListQueue.length === 0) {
+        if (filteredListQueue.length === 0 && pokemons.length > 0) {
           setHasMore(false);
         } else {
-          const nextBatch = filteredListQueue.slice(0, 20);
-          const remaining = filteredListQueue.slice(20);
+          const nextBatch = filteredListQueue.slice(0, BATCH_SIZE);
+          const remaining = filteredListQueue.slice(BATCH_SIZE);
           setFilteredListQueue(remaining);
+          
           await fetchDetailsForList(nextBatch);
+          
           if (remaining.length === 0) setHasMore(false);
         }
       } else {
         if (!hasMore) {
-           setLoading(false); 
+           setLoading(false);
            return;
         }
         
-        const data = await PokeApi.getPokemonList(20, offset);
+        const data = await PokeApi.getPokemonList(BATCH_SIZE, offset);
+        
         if (data.results.length === 0) {
           setHasMore(false);
         } else {
           await fetchDetailsForList(data.results);
-          setOffset(prev => prev + 20);
+          setOffset(prev => prev + BATCH_SIZE);
         }
       }
-    } catch (err) {
-      setError('Falha na conexão.');
+    } catch (err: any) {
+        if (err.message === 'OFFLINE_MODE' && pokemons.length > 0) {
+            setHasMore(false);
+        } else {
+            setError('Falha na conexão ou no carregamento dos dados.');
+        }
     } finally {
       setLoading(false);
     }
-  }, [offset, hasMore, isFiltering, filteredListQueue, loading, addPokemonsUnique]);
+  }, [offset, hasMore, isFiltering, filteredListQueue, loading, pokemons.length, addPokemonsUnique, error]);
 
   const searchPokemon = (text: string) => {
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
@@ -84,19 +96,21 @@ export function usePokedex() {
       return;
     }
 
-    setIsFiltering(true); 
+    setIsFiltering(true);
     
     searchTimeout.current = setTimeout(async () => {
       setLoading(true);
       setPokemons([]);
+      setError(null);
+      setHasMore(false);
       
       try {
         const detail = await PokeApi.getPokemonDetail(text.toLowerCase());
         setPokemons([detail]);
-        setHasMore(false);
-      } catch (err) {
-        setError('Pokémon não encontrado.');
-        setPokemons([]);
+      } catch (err: any) {
+        if (err.message !== 'OFFLINE_MODE') {
+          setError('Pokémon não encontrado.');
+        }
       } finally {
         setLoading(false);
       }
@@ -104,6 +118,8 @@ export function usePokedex() {
   };
 
   const filterByType = async (type: string) => {
+    if (loading) return;
+    
     setLoading(true);
     setIsFiltering(true);
     setHasMore(true);
@@ -114,39 +130,58 @@ export function usePokedex() {
     try {
       const allNamesWithType = await PokeApi.getPokemonByType(type.toLowerCase());
       
-      const firstBatch = allNamesWithType.slice(0, 20);
-      const remaining = allNamesWithType.slice(20);
+      const firstBatch = allNamesWithType.slice(0, BATCH_SIZE);
+      const remaining = allNamesWithType.slice(BATCH_SIZE);
 
       setFilteredListQueue(remaining);
 
       await fetchDetailsForList(firstBatch);
 
-    } catch (err) {
-      setError(`Erro ao carregar tipo ${type}`);
+      if (remaining.length === 0) setHasMore(false);
+
+    } catch (err: any) {
+      if (err.message === 'OFFLINE_MODE' && pokemons.length > 0) {
+          setHasMore(false);
+      } else {
+          setError(`Erro ao carregar Pokémons do tipo ${type}`);
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const resetList = () => {
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    
     setIsFiltering(false);
     setFilteredListQueue([]);
     setPokemons([]);
     setOffset(0);
     setHasMore(true);
     setLoading(false);
+    setError(null);
     
     setTimeout(() => {
-        PokeApi.getPokemonList(20, 0).then(data => {
-             fetchDetailsForList(data.results);
-             setOffset(20);
-        });
+        loadMore();
     }, 50);
   };
 
   useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      const offlineStatus = !state.isConnected;
+      
+      setIsOffline(offlineStatus);
+      setAppOfflineStatus(offlineStatus);
+      
+      if (!offlineStatus && pokemons.length === 0 && !loading && !isFiltering) {
+          loadMore();
+      }
+    });
+
     loadMore();
-  }, []);
+    
+    return () => unsubscribe();
+  }, [loadMore, isFiltering, pokemons.length, loading]);
 
   return {
     pokemons,
@@ -156,6 +191,7 @@ export function usePokedex() {
     loadMore,
     searchPokemon,
     filterByType,
-    resetList
+    resetList,
+    hasMore
   };
 }

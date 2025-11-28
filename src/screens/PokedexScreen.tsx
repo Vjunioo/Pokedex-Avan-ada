@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   StyleSheet, View, Text, FlatList, ActivityIndicator, 
-  SafeAreaView, StatusBar, TextInput, TouchableOpacity, Platform 
+  SafeAreaView, StatusBar, TextInput, TouchableOpacity, Platform, Dimensions 
 } from 'react-native';
 import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons'; 
@@ -11,6 +11,7 @@ import { TYPE_COLORS, DEFAULT_COLOR } from '../utils/colors';
 import { PokemonModal } from '../components/PokemonModal';
 
 const MAX_CONTENT_WIDTH = 600; 
+const WINDOW_WIDTH = Dimensions.get('window').width;
 
 const POKEMON_TYPES = [
   'fire', 'water', 'grass', 'electric', 'bug', 'ghost', 'psychic', 
@@ -31,7 +32,8 @@ export function PokedexScreen({ onBack }: Props) {
     loadMore, 
     searchPokemon, 
     filterByType, 
-    resetList 
+    resetList,
+    hasMore, 
   } = usePokedex();
 
   const [searchText, setSearchText] = useState('');
@@ -118,12 +120,71 @@ export function PokedexScreen({ onBack }: Props) {
     );
   };
 
+  const getItemLayout = (data: any, index: number) => {
+      const screenWidth = Math.min(MAX_CONTENT_WIDTH, WINDOW_WIDTH);
+      
+      const cardMargin = 6; 
+      const listPadding = 15; 
+      
+      const availableWidth = screenWidth - (listPadding * 2); 
+      
+      const cardWidth = (availableWidth / 2) - cardMargin;
+      
+      const cardHeight = cardWidth * 1.4 + (cardMargin * 2); 
+
+      return {
+          length: cardHeight,
+          offset: cardHeight * index,
+          index,
+      };
+  };
+
+  const renderEmptyOrLoading = () => {
+    if (loading && pokemons.length === 0) {
+      // Loader visível no centro da tela durante o carregamento inicial/filtro
+      return (
+        <View style={styles.centerState}>
+          <ActivityIndicator size="large" color="#FF5350" style={{ margin: 30 }} />
+        </View>
+      );
+    }
+    
+    if (!loading && pokemons.length === 0 && !error) {
+      // Mensagem de lista vazia (ex: busca sem resultados)
+      return (
+        <View style={styles.centerState}>
+          <Text style={styles.emptyText}>Nenhum Pokémon encontrado.</Text>
+        </View>
+      );
+    }
+    
+    // Se a lista não está vazia ou se há um erro, retorna null
+    return null; 
+  };
+  
+  // Renderiza a view de erro se houver um erro e a lista estiver vazia
+  const renderErrorState = () => {
+      if (error && !loading && pokemons.length === 0) {
+          return (
+              <View style={styles.centerState}>
+                <MaterialIcons name="error-outline" size={60} color="#ff6b6b" />
+                <Text style={styles.errorTitle}>Ops, algo deu errado!</Text>
+                <Text style={styles.errorDesc}>{error}</Text>
+                <TouchableOpacity onPress={() => resetList()} style={styles.retryButton}>
+                  <Text style={styles.retryText}>Tentar Novamente</Text>
+                </TouchableOpacity>
+              </View>
+          );
+      }
+      return null;
+  }
+
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor="#f2f4f8" />
       
       <View style={styles.responsiveContainer}>
-        {/* HEADER */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onBack} style={styles.backButton}>
              <MaterialIcons name="arrow-back" size={28} color="#333" />
@@ -135,7 +196,6 @@ export function PokedexScreen({ onBack }: Props) {
           {isOffline ? <MaterialIcons name="wifi-off" size={24} color="#d9534f" /> : null}
         </View>
 
-        {/* BARRA DE BUSCA */}
         <View style={styles.searchContainer}>
           <MaterialIcons name="search" size={24} color="#999" />
           <TextInput 
@@ -152,7 +212,6 @@ export function PokedexScreen({ onBack }: Props) {
           )}
         </View>
 
-        {/* LISTA HORIZONTAL DE FILTROS */}
         <View style={styles.filtersWrapper}>
           <FlatList
             data={POKEMON_TYPES}
@@ -165,17 +224,7 @@ export function PokedexScreen({ onBack }: Props) {
           />
         </View>
 
-        {/* LISTA PRINCIPAL DE CARDS */}
-        {error && !loading && pokemons.length === 0 ? (
-          <View style={styles.centerState}>
-            <MaterialIcons name="error-outline" size={60} color="#ff6b6b" />
-            <Text style={styles.errorTitle}>Ops, algo deu errado!</Text>
-            <Text style={styles.errorDesc}>{error}</Text>
-            <TouchableOpacity onPress={() => resetList()} style={styles.retryButton}>
-              <Text style={styles.retryText}>Tentar Novamente</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
+        {renderErrorState() || (
           <FlatList
             data={pokemons}
             keyExtractor={(item) => String(item.id)}
@@ -186,15 +235,22 @@ export function PokedexScreen({ onBack }: Props) {
             onEndReached={loadMore}
             onEndReachedThreshold={0.5}
             showsVerticalScrollIndicator={false}
+            
+            getItemLayout={getItemLayout} 
+            initialNumToRender={10} 
+            maxToRenderPerBatch={8}
+            windowSize={21}
+
+            
+
             ListFooterComponent={
-              loading ? <ActivityIndicator size="large" color="#FF5350" style={{ margin: 30 }} /> : <View style={{ height: 80 }} />
-            }
-            ListEmptyComponent={
-              !loading ? (
-                <View style={styles.centerState}>
-                  <Text style={styles.emptyText}>Nenhum Pokémon encontrado.</Text>
-                </View>
-              ) : null
+              loading && hasMore ? (
+                
+                <ActivityIndicator size="large" color="#FF5350" style={{ margin: 30 }} />
+              ) : (
+               
+                hasMore ? <View style={{ height: 80 }} /> : null 
+              )
             }
           />
         )}
