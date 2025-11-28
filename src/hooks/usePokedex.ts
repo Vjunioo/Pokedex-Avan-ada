@@ -3,7 +3,7 @@ import { PokeApi } from '../api/pokeApi';
 import { PokemonBasic, PokemonDetail } from '../types/pokemon';
 import { CacheManager } from '../utils/cache';
 
-const BATCH_SIZE = 20; // Definindo o tamanho do lote para consistência
+const BATCH_SIZE = 20;
 
 export function usePokedex() {
   const [pokemons, setPokemons] = useState<PokemonDetail[]>([]);
@@ -35,7 +35,6 @@ export function usePokedex() {
       addPokemonsUnique(details);
     } catch (err) {
       console.error(err);
-      // Alterado para ser mais genérico, pois pode ser erro de conexão.
       setError('Erro ao carregar detalhes.'); 
     }
   };
@@ -44,8 +43,6 @@ export function usePokedex() {
     if (loading) return;
 
     setLoading(true);
-    // Removido o await CacheManager.isOffline() daqui se for usar NetInfo no futuro.
-    // Por enquanto, mantendo a chamada original:
     const offline = await CacheManager.isOffline(); 
     setIsOffline(offline);
 
@@ -82,7 +79,6 @@ export function usePokedex() {
   }, [offset, hasMore, isFiltering, filteredListQueue, loading, addPokemonsUnique]);
 
   const fetchSuggestions = useCallback(async (query: string): Promise<string[]> => {
-    // Mantendo a lógica de busca de nomes completa para o filtro e checagem exata
     try {
       let allNames: string[] | null = await CacheManager.get('all_pokemon_names');
 
@@ -95,12 +91,10 @@ export function usePokedex() {
 
       const lowerCaseQuery = query.toLowerCase().trim();
       
-      // Se a query for vazia, retorna todos os nomes.
       if (lowerCaseQuery.length === 0) {
           return allNames || [];
       }
       
-      // Caso contrário, retorna sugestões filtradas.
       const suggestions = (allNames || [])
         .filter(name => name.includes(lowerCaseQuery))
         .slice(0, 10); 
@@ -109,7 +103,6 @@ export function usePokedex() {
 
     } catch (err) {
       console.error("Erro ao buscar sugestões:", err);
-      // Em caso de erro, tenta retornar do cache.
       return await CacheManager.get('all_pokemon_names') || []; 
     }
   }, []);
@@ -139,23 +132,20 @@ export function usePokedex() {
         const isExactMatch = allNames.some(name => name === query);
 
         if (isExactMatch) {
-          // --- MODO MODIFICADO: BUSCA EXATA (Incluindo variações) ---
           
           let formsList: PokemonBasic[] = [];
           try {
-              // Assumindo que 'PokeApi.getPokemonForms(query)' busca todas as formas (Base + variações)
+              
               formsList = await PokeApi.getPokemonForms(query);
               
-              // Garante que a forma base (ex: 'pikachu') venha primeiro na lista.
               formsList.sort((a, b) => {
-                  if (a.name === query) return -1; // Coloca o nome base primeiro
+                  if (a.name === query) return -1;
                   if (b.name === query) return 1;
                   return 0;
               });
 
           } catch (formError) {
               console.warn(`Falha ao buscar formas para ${query}. Buscando apenas o base.`);
-              // Se a busca de formas falhar, busca apenas o Pokémon original.
               formsList = [{ name: query, url: `https://pokeapi.co/api/v2/pokemon/${query}/` }];
           }
 
@@ -165,7 +155,6 @@ export function usePokedex() {
               return;
           }
 
-          // Transfere os resultados para a fila para carregamento paginado (BATCH_SIZE = 20)
           const firstBatch = formsList.slice(0, BATCH_SIZE);
           const remaining = formsList.slice(BATCH_SIZE);
 
@@ -175,7 +164,7 @@ export function usePokedex() {
           if (remaining.length === 0) setHasMore(false);
           
         } else {
-          // --- MODO ORIGINAL: BUSCA PARCIAL (Filtro) ---
+         
           
           const matchingNames = (allNames || [])
             .filter(name => name.includes(query));
@@ -200,7 +189,7 @@ export function usePokedex() {
           if (remaining.length === 0) setHasMore(false);
         }
       } catch (err) {
-        // Se a busca exata falhar E a lista parcial for zero, ou qualquer outro erro
+        
         setError('Ocorreu um erro na busca.');
         setPokemons([]);
         setHasMore(false);
