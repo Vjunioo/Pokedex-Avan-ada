@@ -13,11 +13,25 @@ export const CacheManager = {
       };
       await AsyncStorage.setItem(CACHE_PREFIX + key, JSON.stringify(payload));
     } catch (error: any) {
-      if (error.name === 'QuotaExceededError' || error.message?.includes('quota') || error.message?.includes('exceeded')) {
-        return; 
+      
+      const errorMsg = error.message || '';
+      
+      const isFullDisk = 
+        errorMsg.includes('SQLITE_FULL') || 
+        errorMsg.includes('database or disk is full') || 
+        errorMsg.includes('QuotaExceededError') ||
+        errorMsg.includes('quota');
+
+      if (isFullDisk) {
+        console.warn('[Cache] Disco cheio! Tentando limpar itens antigos...');
+        try {
+            await AsyncStorage.clear();
+        } catch (e) {
+        }
+        return;
       }
       
-      console.error('Erro ao salvar cache:', error);
+      console.error('[Cache] Erro desconhecido ao salvar:', error);
     }
   },
 
