@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { PokeApi } from '../api/pokeApi';
 import { PokemonBasic, PokemonDetail } from '../types/pokemon';
 import { CacheManager } from '../utils/cache';
+import { resolvePokemonName } from '../utils/aliases';
 
 export function usePokedex() {
   const [pokemons, setPokemons] = useState<PokemonDetail[]>([]);
@@ -11,12 +12,12 @@ export function usePokedex() {
 
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
-
   const [activeFilterType, setActiveFilterType] = useState<string | null>(null);
   const [filteredListQueue, setFilteredListQueue] = useState<PokemonBasic[]>([]);
   
   const filterRef = useRef<string | null>(null);
   const searchTimeout = useRef<any>(null);
+  const allPokemonNamesCache = useRef<PokemonBasic[] | null>(null);
 
   const addPokemonsUnique = useCallback((newPokemons: PokemonDetail[]) => {
     setPokemons(prev => {
@@ -33,7 +34,6 @@ export function usePokedex() {
       return details;
     } catch (err) {
       console.error(err);
-      setError('Erro ao carregar detalhes.');
       return [];
     }
   };
@@ -46,23 +46,19 @@ export function usePokedex() {
             setHasMore(false);
             return;
         }
-
         setLoading(true);
         try {
             const nextBatch = filteredListQueue.slice(0, 20);
             const remaining = filteredListQueue.slice(20);
-            
             if (filterRef.current === null) return;
-
             setFilteredListQueue(remaining);
             const details = await fetchDetailsForList(nextBatch);
-            
             if (filterRef.current !== null) {
                 addPokemonsUnique(details);
                 if (remaining.length === 0) setHasMore(false);
             }
         } catch(e) {
-            setError('Erro ao carregar filtro.');
+            setError('Erro ao carregar mais itens.');
         } finally {
             setLoading(false);
         }
@@ -89,7 +85,7 @@ export function usePokedex() {
         }
       }
     } catch (err) {
-      setError('Falha na conexão.');
+      setError('Falha na conexão. Verifique sua internet.');
     } finally {
       setLoading(false);
     }
@@ -99,7 +95,7 @@ export function usePokedex() {
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
     
     if (!text.trim()) {
-      resetList();
+      if (activeFilterType === 'SEARCH') resetList();
       return;
     }
 
@@ -110,16 +106,45 @@ export function usePokedex() {
       setPokemons([]); 
       setFilteredListQueue([]);
       setHasMore(true);
+      setError(null);
       
-      try {
-        const allPokemons = await PokeApi.getAllPokemonNames();
-        const term = text.toLowerCase();
-        const matches = allPokemons.filter(p => p.name.includes(term));
+      const searchTerm = resolvePokemonName(text);
 
-        if (matches.length === 0) {
-            setError('Nenhum Pokémon encontrado.');
+      try {
+        const isNumber = !isNaN(Number(searchTerm));
+        
+        if (isNumber) {
+            try {
+                const detail = await PokeApi.getPokemonDetail(searchTerm);
+                setPokemons([detail]);
+                setHasMore(false);
+            } catch (e) {
+                setError(`Pokémon #${text} não encontrado.`);
+            }
             setLoading(false);
             return;
+        }
+
+        let allPokemons = allPokemonNamesCache.current;
+        if (!allPokemons) {
+            allPokemons = await PokeApi.getAllPokemonNames();
+            allPokemonNamesCache.current = allPokemons;
+        }
+
+        const matches = allPokemons!.filter(p => p.name.includes(searchTerm));
+
+        if (matches.length === 0) {
+            try {
+               const direct = await PokeApi.getPokemonDetail(searchTerm);
+               setPokemons([direct]);
+               setHasMore(false);
+               setLoading(false);
+               return;
+            } catch(e) {
+               setError(`Nenhum Pokémon encontrado com "${text}".`);
+               setLoading(false);
+               return;
+            }
         }
 
         const firstBatch = matches.slice(0, 20);
@@ -132,53 +157,52 @@ export function usePokedex() {
             setPokemons(details);
             if (remaining.length === 0) setHasMore(false);
         }
-      } catch (err) {
-        setError('Erro na busca.');
+      } catch (err: any) {
+        setError('Erro ao realizar a busca.');
       } finally {
-        setLoading(false);
+        if (filterRef.current === 'SEARCH') setLoading(false);
       }
     }, 600);
   };
 
-  const fetchSuggestions = useCallback(async (text: string) => {
+  const fetchSuggestions = useCallback(async (text: string): Promise<string[]> => {
     if (!text || text.length < 2) return [];
-    
+    if (!isNaN(Number(text))) return []; 
+
+    const term = resolvePokemonName(text);
+
     try {
-      const allPokemons = await PokeApi.getAllPokemonNames();
-      const term = text.toLowerCase();
-      
-      return allPokemons
-        .filter(p => p.name.includes(term))
-        .map(p => p.name)
-        .slice(0, 5);
+      let allPokemons = allPokemonNamesCache.current;
+      if (!allPokemons) {
+          allPokemons = await PokeApi.getAllPokemonNames();
+          allPokemonNamesCache.current = allPokemons;
+      }
+      return allPokemons!.filter(p => p.name.includes(term)).map(p => p.name).slice(0, 5);
     } catch (e) {
       return [];
     }
   }, []);
 
   const filterByType = async (type: string) => {
-    updateFilterMode(type);
-
+    if (activeFilterType === type) return;
     setLoading(true);
-    setPokemons([]); 
-    setFilteredListQueue([]); 
-    setError(null);
-    setHasMore(true);
-
     try {
       const allNamesWithType = await PokeApi.getPokemonByType(type.toLowerCase());
-      
+      updateFilterMode(type);
+      setPokemons([]); 
+      setFilteredListQueue([]); 
+      setError(null);
+      setHasMore(true);
+
       const firstBatch = allNamesWithType.slice(0, 20);
       const remaining = allNamesWithType.slice(20);
-
       setFilteredListQueue(remaining);
       const details = await fetchDetailsForList(firstBatch);
-      
       if (filterRef.current === type) {
           setPokemons(details);
+          if (remaining.length === 0) setHasMore(false);
       }
-
-    } catch (err) {
+    } catch (err: any) {
       setError(`Erro ao carregar tipo ${type}`);
     } finally {
       setLoading(false);
@@ -190,43 +214,32 @@ export function usePokedex() {
       filterRef.current = mode;
   };
 
-  const resetList = () => {
+  const resetList = async () => {
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
     updateFilterMode(null);
     setFilteredListQueue([]);
-    setPokemons([]);
-    setOffset(0);
     setHasMore(true);
-    setLoading(false);
-    
-    setTimeout(() => {
+    setOffset(0);
+    setError(null);
+    setPokemons([]); 
+    setLoading(true); 
+    try {
+        const data = await PokeApi.getPokemonList(20, 0);
+        const details = await fetchDetailsForList(data.results);
         if (filterRef.current === null) {
-            PokeApi.getPokemonList(20, 0).then(async (data) => {
-                 if (filterRef.current === null) {
-                    const details = await fetchDetailsForList(data.results);
-                    addPokemonsUnique(details);
-                    setOffset(20);
-                 }
-            });
+            setPokemons(details);
+            setOffset(20);
         }
-    }, 50);
+    } catch (err) {
+        setError('Falha ao recarregar a lista.');
+    } finally {
+        setLoading(false);
+    }
   };
 
   useEffect(() => {
-    if (filterRef.current === null) {
-        loadMore();
-    }
+    loadMore();
   }, []);
 
-  return {
-    pokemons,
-    loading,
-    error,
-    isOffline,
-    loadMore,
-    searchPokemon,
-    filterByType,
-    resetList,
-    activeFilterType,
-    fetchSuggestions
-  };
+  return { pokemons, loading, error, isOffline, loadMore, searchPokemon, filterByType, resetList, activeFilterType, fetchSuggestions };
 }

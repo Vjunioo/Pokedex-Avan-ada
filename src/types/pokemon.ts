@@ -1,3 +1,4 @@
+
 export interface PokemonType {
   slot: number;
   type: {
@@ -11,8 +12,6 @@ export interface PokemonSprites {
     'official-artwork': {
       front_default: string;
     };
-
-
   };
 }
   
@@ -43,4 +42,17 @@ export interface PokemonDetail {
   height: number;
   stats: PokemonStat[]; 
   abilities: PokemonAbility[]; 
+}
+
+
+export interface EvolutionChainLink {
+  species: {
+    name: string;
+    url: string; 
+  };
+  evolves_to: EvolutionChainLink[];
+}
+
+export interface EvolutionChainResponse {
+  chain: EvolutionChainLink;
 }

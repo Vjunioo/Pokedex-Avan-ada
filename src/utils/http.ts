@@ -11,7 +11,7 @@ const MAX_RETRIES = 3;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function httpClient<T>(url: string, config: RequestConfig = {}): Promise<T> {
-  const { timeout = DEFAULT_TIMEOUT, retries = MAX_RETRIES, ...customConfig } = config;
+  const { timeout = DEFAULT_TIMEOUT, retries = MAX_RETRIES, signal: externalSignal, ...customConfig } = config;
 
   const netState = await NetInfo.fetch();
   if (!netState.isConnected) {
@@ -20,6 +20,12 @@ export async function httpClient<T>(url: string, config: RequestConfig = {}): Pr
 
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
+
+  if (externalSignal) {
+    externalSignal.addEventListener('abort', () => {
+      controller.abort();
+    });
+  }
 
   try {
     const response = await fetch(url, {
@@ -31,6 +37,7 @@ export async function httpClient<T>(url: string, config: RequestConfig = {}): Pr
 
     if (!response.ok) {
       if (response.status >= 500) throw new Error(`SERVER_ERROR`);
+      if (response.status === 404) throw new Error(`NOT_FOUND`);
       throw new Error(`HTTP_ERROR_${response.status}`);
     }
 
@@ -39,13 +46,29 @@ export async function httpClient<T>(url: string, config: RequestConfig = {}): Pr
   } catch (error: any) {
     clearTimeout(id);
 
-    const shouldRetry = error.message === 'SERVER_ERROR' || error.name === 'AbortError';
+    if (error.name === 'AbortError') {
+      if (externalSignal?.aborted) {
+        throw error;
+      }
+      error.name = 'TimeoutError';
+      error.message = 'TimeoutError';
+    }
 
-    if (shouldRetry && retries > 0) {
-      const delay = 1000 * (2 ** (MAX_RETRIES - retries));
-      console.log(`[HTTP] Erro em ${url}. Tentando em ${delay}ms...`);
-      await wait(delay);
-      return httpClient<T>(url, { ...config, retries: retries - 1 });
+    const isNetworkError = error.name === 'TimeoutError' || error.message === 'Network request failed';
+    const isServerError = error.message === 'SERVER_ERROR';
+    const shouldRetry = (isNetworkError || isServerError) && retries > 0;
+
+    if (shouldRetry) {
+      const attempt = MAX_RETRIES - retries + 1;
+      const baseDelay = 1000 * Math.pow(2, attempt - 1);
+      const jitter = Math.random() * 500;
+      const totalDelay = baseDelay + jitter;
+
+      console.log(`[HTTP] Erro em ${url}. Tentativa ${attempt}/${MAX_RETRIES}. Aguardando ${Math.floor(totalDelay)}ms...`);
+
+      await wait(totalDelay);
+
+      return httpClient<T>(url, { ...config, retries: retries - 1, signal: externalSignal });
     }
 
     throw error;

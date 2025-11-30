@@ -1,3 +1,4 @@
+// src/screens/WelcomeScreen.tsx
 import React, { useRef, useEffect } from "react";
 import {
   Animated,
@@ -10,200 +11,219 @@ import {
   Text,
   Dimensions,
   SafeAreaView,
-  Platform
+  Platform,
+  Easing
 } from "react-native";
 import { MaterialIcons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { LinearGradient } from 'expo-linear-gradient';
 
-const WALLPAPER_IMG = require('../../assets/background/wallpaper.jpg');
-const LOGO_IMG = require('../../assets/logos/titulo.png');
-const POKEBALL_ICON = require('../../assets/logos/pokeball.png');
+type RootStackParamList = {
+  Welcome: undefined;
+  Pokedex: undefined;
+};
+type NavigationProps = NativeStackNavigationProp<RootStackParamList, 'Welcome'>;
 
-const { height } = Dimensions.get('window');
+const WALLPAPER_IMG = require('../assets/background/wallpaper.jpg');
+const LOGO_IMG = require('../assets/logos/titulo-pokedex.png');
+const POKEBALL_ICON = require('../assets/logos/pokeball.png');
 
-interface Props {
-  onStart: () => void;
-}
+const { width, height } = Dimensions.get('window');
 
-export function WelcomeScreen({ onStart }: Props) {
+export function WelcomeScreen() {
+  const navigation = useNavigation<NavigationProps>();
+  
   const scaleAnim = useRef(new Animated.Value(1)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const spinAnim = useRef(new Animated.Value(0)).current;
 
   const useNativeDriver = Platform.OS !== 'web';
 
   useEffect(() => {
     Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.05,
-          duration: 1500,
-          useNativeDriver, 
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 1500,
-          useNativeDriver,
-        }),
-      ])
+      Animated.timing(spinAnim, {
+        toValue: 1,
+        duration: 4000,
+        easing: Easing.linear,
+        useNativeDriver,
+      })
     ).start();
   }, []);
 
+  const spin = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg']
+  });
+
   const handleStartPress = () => {
     Animated.sequence([
-      Animated.timing(scaleAnim, { 
-        toValue: 0.95,
-        duration: 100, 
-        useNativeDriver 
-      }),
-      Animated.timing(scaleAnim, { 
-        toValue: 1, 
-        duration: 100, 
-        useNativeDriver 
-      })
+      Animated.timing(scaleAnim, { toValue: 0.96, duration: 100, useNativeDriver }),
+      Animated.timing(scaleAnim, { toValue: 1, duration: 100, useNativeDriver })
     ]).start(() => {
-      onStart();
+      navigation.replace('Pokedex');
     });
   };
 
   return (
     <ImageBackground
       source={WALLPAPER_IMG}
-      style={styles.container}
-      resizeMode="cover" 
+      style={styles.backgroundImage}
+      resizeMode="cover"
     >
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       
-      <View style={styles.overlay}>
-        <SafeAreaView style={styles.contentContainer}>
-          
-          {/* --- HEADER --- */}
-          <View style={styles.headerArea}>
-            <Image 
-              source={LOGO_IMG} 
-              style={styles.logo} 
-              resizeMode="contain" 
-            />
-            <Text style={styles.subtitle}>ADVANCED EDITION</Text>
-          </View>
-
-          {/* --- BOTÃO --- */}
-          <View style={styles.footerArea}>
-            <TouchableOpacity
-              onPress={handleStartPress}
-              activeOpacity={0.9}
-              style={{ width: '100%', alignItems: 'center' }}
-            >
-              <Animated.View
-                style={[
-                  styles.button,
-                  { 
-                    transform: [
-                      { scale: scaleAnim }, 
-                      { scale: pulseAnim }
-                    ] 
-                  },
-                ]}
-              >
-                <View style={styles.iconCircle}>
-                  <Image 
-                    source={POKEBALL_ICON} 
-                    style={styles.btnIcon} 
-                    resizeMode="contain" 
-                  />
+      <LinearGradient
+        colors={['rgba(0,0,0,0.8)', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.9)']}
+        style={styles.gradientOverlay}
+      >
+        <SafeAreaView style={styles.safeArea}>
+         
+          <View style={styles.contentConstrainer}>
+            
+            <View style={styles.contentContainer}>
+             
+              <View style={styles.headerArea}>
+                <Image 
+                  source={LOGO_IMG} 
+                  style={styles.logo} 
+                  resizeMode="contain" 
+                />
+                <View style={styles.subtitleContainer}>
+                  <Text style={styles.subtitle}>ADVANCED EDITION</Text>
                 </View>
+              </View>
 
-                <Text 
-                  style={styles.buttonText} 
-                  numberOfLines={1} 
-                  adjustsFontSizeToFit
+            
+              <View style={styles.footerArea}>
+                <TouchableOpacity
+                  onPress={handleStartPress}
+                  activeOpacity={0.9}
+                  style={styles.buttonTouchable}
                 >
-                  INICIAR
-                </Text>
-                
-                <MaterialIcons name="chevron-right" size={32} color="#FFF" style={{ opacity: 0.8 }} />
-              </Animated.View>
-            </TouchableOpacity>
+                  <Animated.View style={[ styles.buttonWrapper, { transform: [{ scale: scaleAnim }] } ]}>
+                    <LinearGradient
+                      colors={['#FF6B6B', '#EE5253', '#D63031']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.buttonGradient}
+                    >
+                      <View style={styles.iconCircle}>
+                        <Animated.Image 
+                          source={POKEBALL_ICON} 
+                          style={[styles.btnIcon, { transform: [{ rotate: spin }] }]} 
+                          resizeMode="contain" 
+                        />
+                      </View>
 
-            <Text style={styles.footerText}>Designed for Trainers</Text>
+                      <Text style={styles.buttonText}>INICIAR JORNADA</Text>
+                      
+                      <MaterialIcons name="chevron-right" size={28} color="rgba(255,255,255,0.9)" />
+                    </LinearGradient>
+                  </Animated.View>
+                </TouchableOpacity>
+
+                <Text style={styles.footerText}>Designed for Trainers • v1.0</Text>
+              </View>
+            </View>
+            
           </View>
-
         </SafeAreaView>
-      </View>
+      </LinearGradient>
     </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  backgroundImage: {
     flex: 1,
-    backgroundColor: '#000',
+    width: '100%',
+    height: '100%',
+    overflow: 'hidden',
   },
-  overlay: {
+  gradientOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)', 
+  },
+  safeArea: {
+    flex: 1,
+  },
+  
+  contentConstrainer: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 600, 
+    alignSelf: 'center', 
   },
   contentContainer: {
     flex: 1,
-    justifyContent: 'space-between', 
+    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: Platform.OS === 'android' ? 40 : 20,
+    paddingVertical: 20,
   },
   
   headerArea: {
-    marginTop: height * 0.1, 
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
     width: '100%',
     paddingHorizontal: 20,
+    marginBottom: 40,
   },
   logo: {
-    width: '90%',
+    width: '90%', 
+    height: height * 0.25,
     maxWidth: 500,
-    height: 250,         
-    maxHeight: height * 0.3,
+    maxHeight: 250,
+  },
+  subtitleContainer: {
+    marginTop: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)', 
+    borderRadius: 25,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
   subtitle: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-    letterSpacing: 6, 
-    marginTop: -10,   
-    opacity: 0.9,
+    color: '#FFFFFF', 
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 4, 
     textAlign: 'center',
-    textShadowColor: 'rgba(0,0,0,0.8)',
-    textShadowRadius: 10,
-    textShadowOffset: { width: 0, height: 2 },
   },
 
   footerArea: {
-    marginBottom: height * 0.08, 
     alignItems: 'center',
     width: '100%',
-    paddingHorizontal: 20,
+    paddingHorizontal: 30,
+    paddingBottom: Platform.OS === 'ios' ? 20 : 40,
   },
-  button: {
-    flexDirection: 'row',
-    backgroundColor: '#FF5350', 
-    
+  buttonTouchable: {
     width: '100%',
-    maxWidth: 400,
-    height: 75,
-    
-    borderRadius: 37.5,
+    maxWidth: 380,
+    borderRadius: 35,
+    shadowColor: '#D63031',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 8,
+    backgroundColor: 'transparent',
+  },
+  buttonWrapper: {
+    borderRadius: 35,
+  },
+  buttonGradient: {
+    flexDirection: 'row',
+    height: 68,
     alignItems: 'center',
-    paddingHorizontal: 10,
-    
-    shadowColor: '#FF5350',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.7,
-    shadowRadius: 20,
-    elevation: 15,
-    
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 8,
+    borderRadius: 35,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)', 
   },
   iconCircle: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: '#FFF',
     alignItems: 'center',
     justifyContent: 'center',
@@ -216,15 +236,19 @@ const styles = StyleSheet.create({
   buttonText: {
     flex: 1,
     color: '#FFF',
-    fontSize: 24,
-    fontWeight: '800',
-    letterSpacing: 2,
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 1.5,
     textTransform: 'uppercase',
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   footerText: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 12,
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 11,
     marginTop: 25,
     letterSpacing: 1,
+    fontWeight: '500',
   },
 });
