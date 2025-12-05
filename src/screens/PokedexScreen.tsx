@@ -27,6 +27,10 @@ import { PokemonDetail } from '../types/pokemon';
 import { getColor, getTypeImage } from '../utils/colors';
 
 const LOGO_IMG = require('../assets/logos/titulo-pokedex.png');
+const ERR_PIKACHU_SAD = require('../assets/err/pikachu-sad.png');
+const ERR_POKEBALL_EMPTY = require('../assets/err/pokeball-empty.png');
+const ERR_PSYDUCK_CONFUSED = require('../assets/err/psyduck-confused.png');
+const ERR_SNORLAX_SLEEPING = require('../assets/err/snorlax-sleep.png'); 
 
 const POKEMON_TYPES = [
   'fire', 'water', 'grass', 'electric', 'bug', 'ghost', 'psychic', 
@@ -55,6 +59,17 @@ export function PokedexScreen() {
 
   const [selectedPokemon, setSelectedPokemon] = useState<PokemonDetail | null>(null);
   const [showExitModal, setShowExitModal] = useState(false);
+  
+  const [showOfflineBanner, setShowOfflineBanner] = useState(isOffline && pokemons.length > 0);
+
+  React.useEffect(() => {
+    if (isOffline && pokemons.length > 0) {
+      setShowOfflineBanner(true);
+    } 
+    else if (!isOffline || pokemons.length === 0) {
+      setShowOfflineBanner(false);
+    }
+  }, [isOffline, pokemons.length]);
 
   const loadingSkeletons = Array(12).fill(0);
 
@@ -86,6 +101,47 @@ export function PokedexScreen() {
     setShowExitModal(false);
     navigation.navigate('Welcome');
   };
+  
+  const getOfflineBannerContent = () => {
+    return { 
+      image: ERR_SNORLAX_SLEEPING, 
+      title: 'Modo Offline Ativado', 
+      desc: 'Os dados exibidos podem estar desatualizados. Use por sua conta e risco, pois o carregamento de novas imagens ou detalhes pode falhar.',
+      buttonText: 'Entendi, continuar offline'
+    };
+  };
+
+  const getErrorContent = () => {
+    const errString = error || '';
+    
+    if (errString.includes('Nenhum') || errString.includes('encontrado')) {
+      return { 
+        image: ERR_POKEBALL_EMPTY, 
+        title: 'Nada por aqui...', 
+        desc: 'Não encontramos nenhum Pokémon com esse nome.',
+        buttonText: 'Limpar Busca'
+      };
+    }
+    
+    if (errString.includes('conexão') || isOffline) {
+      return { 
+        image: ERR_PIKACHU_SAD, 
+        title: 'Sem Conexão', 
+        desc: 'Verifique sua internet para carregar os dados ou o cache.',
+        buttonText: 'Tentar Novamente'
+      };
+    }
+    
+    return { 
+      image: ERR_PSYDUCK_CONFUSED, 
+      title: 'Ops, que confuso!', 
+      desc: errString || 'Ocorreu um erro inesperado.',
+      buttonText: 'Tentar Novamente'
+    };
+  };
+
+  const errorContent = getErrorContent();
+  const offlineBannerContent = getOfflineBannerContent();
 
   const renderItem = useCallback(({ item, index }: { item: PokemonDetail, index: number }) => (
     <Animatable.View 
@@ -139,19 +195,6 @@ export function PokedexScreen() {
     );
   };
 
-  const getErrorContent = () => {
-    const errString = error || '';
-    if (errString.includes('Nenhum') || errString.includes('encontrado')) {
-      return { image: require('../assets/err/pokeball-empty.png'), title: 'Nada por aqui...', desc: 'Não encontramos nenhum Pokémon com esse nome.' };
-    }
-    if (errString.includes('conexão') || isOffline) {
-      return { image: require('../assets/err/pikachu-sad.png'), title: 'Sem Conexão', desc: 'Verifique sua internet para carregar os dados.' };
-    }
-    return { image: require('../assets/err/psyduck-confused.png'), title: 'Ops, que confuso!', desc: errString || 'Ocorreu um erro inesperado.' };
-  };
-
-  const errorContent = getErrorContent();
-
   const showSkeletons = loading && pokemons.length === 0;
   const showList = !showSkeletons && pokemons.length > 0;
   const showEmpty = !loading && pokemons.length === 0 && !error;
@@ -204,7 +247,36 @@ export function PokedexScreen() {
         <View style={styles.bodyContainer}>
           <View style={[styles.contentConstrainer, { flex: 1 }]}>
             
-            <View style={styles.filtersWrapper}>
+            {showOfflineBanner && (
+              <Animatable.View 
+                animation="slideInDown" 
+                duration={400} 
+                style={styles.offlineBanner}
+              >
+                <View style={styles.offlineTextContainer}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                    <MaterialIcons name="cloud-off" size={20} color="#D83021" />
+                    <Text style={styles.offlineTitle}> {offlineBannerContent.title}</Text>
+                  </View>
+                  <Text style={styles.offlineDesc}>{offlineBannerContent.desc}</Text>
+                </View>
+                <TouchableOpacity 
+                  onPress={() => setShowOfflineBanner(false)} 
+                  style={styles.offlineCloseButton}
+                  hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
+                >
+                  <MaterialIcons name="close" size={20} color="#666" />
+                </TouchableOpacity>
+              </Animatable.View>
+            )}
+
+            <View 
+              style={[
+                styles.filtersWrapper, 
+                // A lógica dinâmica foi movida para cá
+                showOfflineBanner && { marginTop: 0 } 
+              ]}
+            >
               <FlatList
                 data={POKEMON_TYPES}
                 horizontal
@@ -264,7 +336,7 @@ export function PokedexScreen() {
                   <Text style={styles.errorTitle}>{errorContent.title}</Text>
                   <Text style={styles.errorDesc}>{errorContent.desc}</Text>
                   <TouchableOpacity onPress={() => resetList()} style={styles.retryButton}>
-                    <Text style={styles.retryText}>Tentar Novamente</Text>
+                    <Text style={styles.retryText}>{errorContent.buttonText}</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -364,9 +436,42 @@ const styles = StyleSheet.create({
     width: '100%',
     zIndex: 1,
   },
+  offlineBanner: {
+    backgroundColor: '#FFEBEE', 
+    borderWidth: 1,
+    borderColor: '#EF9A9A',
+    borderRadius: 12,
+    marginHorizontal: 15,
+    marginTop: 15,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  offlineTextContainer: {
+    flex: 1,
+    flexDirection: 'column',
+    marginRight: 10,
+  },
+  offlineTitle: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#D83021',
+  },
+  offlineDesc: {
+    fontSize: 13,
+    color: '#666',
+  },
+  offlineCloseButton: {
+    padding: 4,
+  },
   filtersWrapper: {
     height: 50,
-    marginTop: 15,
+    marginTop: 15, // Valor padrão estático
     marginBottom: 5,
   },
   filterItem: {
